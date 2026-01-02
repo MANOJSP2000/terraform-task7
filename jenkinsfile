@@ -1,102 +1,86 @@
 pipeline {
-  agent {
-    docker {
-      image 'hashicorp/terraform:1.6'
-      args '-u root'
-    }
+  agent any
+
+  options {
+    disableConcurrentBuilds()
   }
 
   parameters {
     choice(
-      name: 'ENV',
-      choices: ['dev', 'uat', 'prod'],
+      name: 'ENVIRONMENT',
+      choices: ['DEV', 'UAT', 'PROD'],
       description: 'Select environment'
+    )
+
+    choice(
+      name: 'ACTION',
+      choices: ['plan', 'apply'],
+      description: 'Select Terraform action'
     )
   }
 
-  options {
-    disableConcurrentBuilds()
-    timestamps()
-  }
-
   environment {
+    AWS_DEFAULT_REGION     = 'us-east-1'
     AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')
     AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
-    AWS_DEFAULT_REGION    = 'us-east-1'
+    TF_ENV_DIR             = "env/${ENVIRONMENT.toLowerCase()}"
   }
 
   stages {
 
-    stage('Checkout') {
+    stage('Checkout Code') {
       steps {
-        checkout scm
-      }
-    }
-
-    stage('Validate Environment') {
-      steps {
-        sh '''
-          echo "Selected ENV: ${ENV}"
-          ls envs
-          ls envs/${ENV}
-        '''
+        echo 'Cloning Terraform infrastructure repository'
+        git branch: 'main',
+            url: 'https://github.com/MANOJSP2000/terraform-task7.git',
+            credentialsId: 'aws-creds'
       }
     }
 
     stage('Terraform Init') {
       steps {
-        dir("envs/${ENV}") {
-          sh 'terraform init -reconfigure'
-        }
-      }
-    }
-
-    stage('Terraform Validate') {
-      steps {
-        dir("envs/${ENV}") {
-          sh 'terraform validate'
-        }
+        echo "Initializing Terraform for ${ENVIRONMENT}"
+        sh 'cd $TF_ENV_DIR && terraform init'
       }
     }
 
     stage('Terraform Plan') {
       steps {
-        dir("envs/${ENV}") {
-          sh 'terraform plan'
+        echo "Planning Terraform changes for ${ENVIRONMENT}"
+        sh 'cd $TF_ENV_DIR && terraform plan -out=tfplan'
+      }
+    }
+
+    stage('Concurrency Hold (Lock Test)') {
+      when {
+        expression { params.ACTION == 'apply' }
+      }
+      steps {
+        echo 'Holding pipeline to validate remote state locking'
+        sleep time: 2, unit: 'MINUTES'
+      }
+    }
+
+    stage('Manual Approval') {
+      when {
+        allOf {
+          expression { params.ACTION == 'apply' }
+          expression { params.ENVIRONMENT in ['UAT', 'PROD'] }
         }
+      }
+      steps {
+        input message: "Approve deployment to ${ENVIRONMENT}?"
       }
     }
 
     stage('Terraform Apply') {
       when {
-        expression { params.ENV != 'prod' }
+        expression { params.ACTION == 'apply' }
       }
       steps {
-        dir("envs/${ENV}") {
-          sh 'terraform apply -auto-approve'
-        }
+        echo "Applying Terraform changes for ${ENVIRONMENT}"
+        sh 'cd $TF_ENV_DIR && terraform apply -auto-approve tfplan'
       }
-    }
-
-    stage('Terraform Apply (PROD)') {
-      when {
-        expression { params.ENV == 'prod' }
-      }
-      steps {
-        input message: 'Approve production deployment?'
-        dir("envs/${ENV}") {
-          sh 'terraform apply -auto-approve'
-        }
-      }
-    }
-  }
-
-  post {
-    success {
-      echo "Terraform deployment completed successfully for ${ENV}"
-    }
-    failure {
-      echo "Terraform deployment failed for ${ENV}"
     }
   }
 }
