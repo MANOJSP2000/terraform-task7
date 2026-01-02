@@ -1,102 +1,50 @@
-pipeline {
-  agent {
-    docker {
-      image 'hashicorp/terraform:1.6'
-      args '-u root'
-    }
-  }
+node {
 
-  parameters {
-    choice(
-      name: 'ENV',
-      choices: ['dev', 'uat', 'prod'],
-      description: 'Select environment'
-    )
-  }
+    /* =========================
+       Job Configuration
+       ========================= */
+    properties([
+        parameters([
+            choice(
+                name: 'ENV',
+                choices: ['dev', 'uat', 'prod'],
+                description: 'Select environment'
+            )
+        ]),
+        disableConcurrentBuilds()
+    ])
 
-  options {
-    disableConcurrentBuilds()
-    timestamps()
-  }
-
-  environment {
-    AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')
-    AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
-    AWS_DEFAULT_REGION    = 'us-east-1'
-  }
-
-  stages {
-
+    /* =========================
+       Checkout Source Code
+       ========================= */
     stage('Checkout') {
-      steps {
-        checkout scm
-      }
+        git branch: 'main',
+            url: 'https://github.com/MANOJSP2000/terraform-task7.git'
     }
 
-    stage('Validate Environment') {
-      steps {
-        sh '''
-          echo "Selected ENV: ${ENV}"
-          ls envs
-          ls envs/${ENV}
-        '''
-      }
-    }
+    /* =========================
+       Terraform Execution
+       ========================= */
+    stage('Terraform with Lock') {
 
-    stage('Terraform Init') {
-      steps {
-        dir("envs/${ENV}") {
-          sh 'terraform init -reconfigure'
+        // Environment-level concurrency control
+        lock("terraform-${params.ENV}") {
+
+            stage('Terraform Init') {
+                sh """
+                terraform init \
+                  -backend-config=envs/${params.ENV}/backend.tf \
+                  -reconfigure
+                """
+            }
+
+            stage('Terraform Plan') {
+                sh 'terraform plan'
+            }
+
+            stage('Terraform Apply') {
+                sh 'terraform apply -auto-approve'
+            }
         }
-      }
     }
-
-    stage('Terraform Validate') {
-      steps {
-        dir("envs/${ENV}") {
-          sh 'terraform validate'
-        }
-      }
-    }
-
-    stage('Terraform Plan') {
-      steps {
-        dir("envs/${ENV}") {
-          sh 'terraform plan'
-        }
-      }
-    }
-
-    stage('Terraform Apply') {
-      when {
-        expression { params.ENV != 'prod' }
-      }
-      steps {
-        dir("envs/${ENV}") {
-          sh 'terraform apply -auto-approve'
-        }
-      }
-    }
-
-    stage('Terraform Apply (PROD)') {
-      when {
-        expression { params.ENV == 'prod' }
-      }
-      steps {
-        input message: 'Approve production deployment?'
-        dir("envs/${ENV}") {
-          sh 'terraform apply -auto-approve'
-        }
-      }
-    }
-  }
-
-  post {
-    success {
-      echo "Terraform deployment completed successfully for ${ENV}"
-    }
-    failure {
-      echo "Terraform deployment failed for ${ENV}"
-    }
-  }
 }
