@@ -3,7 +3,7 @@ pipeline {
 
   parameters {
     choice(
-      name: 'ENV',
+      name: 'envs',
       choices: ['dev', 'uat', 'prod'],
       description: 'Select environment'
     )
