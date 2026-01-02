@@ -33,7 +33,7 @@ pipeline {
         echo 'Cloning Terraform infrastructure repository'
         git branch: 'main',
             url: 'https://github.com/MANOJSP2000/terraform-task7.git',
-            credentialsId: 'aws-creds'
+            credentialsId: 'jenkinstoken'
       }
     }
 
