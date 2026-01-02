@@ -1,77 +1,69 @@
+pipeline {
+  agent any
+
   parameters {
     choice(
-      name: 'ENVIRONMENT',
-      choices: ['DEV', 'UAT', 'PROD']
-    )
-
-    choice(
-      name: 'ACTION',
-      choices: ['plan', 'apply'],
+      name: 'ENV',
+      choices: ['dev', 'uat', 'prod'],
+      description: 'Select environment'
     )
   }
 
+  options {
+    disableConcurrentBuilds()
+    timestamps()
+  }
+
   environment {
-    AWS_DEFAULT_REGION     = 'us-east-1'
     AWS_ACCESS_KEY_ID     = credentials('aws-access-key-id')
     AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
-    TF_ENV_DIR             = "env/${ENVIRONMENT.toLowerCase()}"
+    AWS_DEFAULT_REGION    = 'us-east-1'
   }
 
   stages {
 
-    stage('Checkout Code') {
+    stage('Checkout') {
       steps {
-        echo 'Cloning Terraform infrastructure repository'
-        git branch: 'main',
-            url: 'https://github.com/Daniel18-dan/aws_terraform_infra.git',
-            credentialsId: 'manoj'
+        checkout scm
+      }
+    }
+
+    stage('Validate Environment') {
+      steps {
+        sh '''
+          echo "Selected ENV: ${ENV}"
+          ls
+          ls envs
+          ls envs/${ENV}
+        '''
       }
     }
 
     stage('Terraform Init') {
       steps {
-        echo "Initializing Terraform for ${ENVIRONMENT}"
-        sh 'cd $TF_ENV_DIR && terraform init'
+        dir("envs/${ENV}") {
+          sh 'terraform init -reconfigure'
+        }
       }
     }
 
     stage('Terraform Plan') {
       steps {
-        echo "Planning Terraform changes for ${ENVIRONMENT}"
-        sh 'cd $TF_ENV_DIR && terraform plan -out=tfplan'
-      }
-    }
-
-    stage('Concurrency Hold (Lock Test)') {
-      when {
-        expression { params.ACTION == 'apply' }
-      }
-      steps {
-        echo 'Holding pipeline to validate remote state locking'
-        sleep time: 2, unit: 'MINUTES'
-      }
-    }
-
-    stage('Manual Approval') {
-      when {
-        allOf {
-          expression { params.ACTION == 'apply' }
-          expression { params.ENVIRONMENT in ['UAT', 'PROD'] }
+        dir("envs/${ENV}") {
+          sh 'terraform plan'
         }
-      }
-      steps {
-        input message: "Approve deployment to ${ENVIRONMENT}?"
       }
     }
 
     stage('Terraform Apply') {
-      when {
-        expression { params.ACTION == 'apply' }
-      }
       steps {
-        echo "Applying Terraform changes for ${ENVIRONMENT}"
-        sh 'cd $TF_ENV_DIR && terraform apply -auto-approve tfplan'
+        dir("envs/${ENV}") {
+          sh 'terraform apply -auto-approve'
+        }
       }
     }
-  }
-}
+
+  }   // end stages
+
+}     // end pipeline
+
