@@ -1,8 +1,5 @@
 node {
 
-    /* =========================
-       Job Configuration
-       ========================= */
     properties([
         parameters([
             choice(
@@ -14,36 +11,29 @@ node {
         disableConcurrentBuilds()
     ])
 
-    /* =========================
-       Checkout Source Code
-       ========================= */
     stage('Checkout') {
         git branch: 'main',
             url: 'https://github.com/MANOJSP2000/terraform-task7.git'
     }
 
-    /* =========================
-       Terraform Execution
-       ========================= */
     stage('Terraform with Lock') {
-
-        // Environment-level concurrency control
         lock("terraform-${params.ENV}") {
 
             stage('Terraform Init') {
                 sh """
+                cd terraform
                 terraform init \
-                  -backend-config=envs/${params.ENV}/backend.tf \
+                  -backend-config=../envs/${params.ENV}/backend.tf \
                   -reconfigure
                 """
             }
 
             stage('Terraform Plan') {
-                sh 'terraform plan'
+                sh "cd terraform && terraform plan"
             }
 
             stage('Terraform Apply') {
-                sh 'terraform apply -auto-approve'
+                sh "cd terraform && terraform apply -auto-approve"
             }
         }
     }
