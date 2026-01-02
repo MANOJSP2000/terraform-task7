@@ -1,14 +1,12 @@
   parameters {
     choice(
       name: 'ENVIRONMENT',
-      choices: ['DEV', 'UAT', 'PROD'],
-      description: 'Select environment'
+      choices: ['DEV', 'UAT', 'PROD']
     )
 
     choice(
       name: 'ACTION',
       choices: ['plan', 'apply'],
-      description: 'Select Terraform action'
     )
   }
 
@@ -26,7 +24,7 @@
         echo 'Cloning Terraform infrastructure repository'
         git branch: 'main',
             url: 'https://github.com/Daniel18-dan/aws_terraform_infra.git',
-            credentialsId: 'github-token'
+            credentialsId: 'manoj'
       }
     }
 
